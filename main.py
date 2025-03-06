@@ -21,82 +21,82 @@ def get_soup(web_page: str) -> BeautifulSoup:
 
     return BeautifulSoup(web_page, "html.parser")
 
-def odkaz_na_obec(soup: BeautifulSoup) -> tuple:
-    '''Vrátí seznam odkazů na obce'''
+def point_to_loc(soup: BeautifulSoup) -> tuple:
+    '''Vrátí seznam pointerů na obce'''
 
-    obce_cisla = []
-    obce_nazvy = []
-    odkazy = []
-    radky = soup.find_all("tr")
+    loc_number = [] # seznam čísel obcí
+    loc_name = [] # seznam názvů obcí
+    pointers = [] # seznam pointerů na obce
+    lines = soup.find_all("tr") # najde všechny řádky
 
-    for radek in radky:
-        cislo_bunka = radek.find("td", class_="cislo")
-        nazev_bunka = radek.find("td", class_="overflow_name")
-        odkaz = radek.find("a")
+    for line in lines:
+        cell_number = line.find("td", class_="cislo")
+        cell_name = line.find("td", class_="overflow_name")
+        pointer = line.find("a")
 
-        if cislo_bunka and nazev_bunka and odkaz:
-            odkazy.append(odkaz["href"])
-            obce_cisla.append(cislo_bunka.text.strip())
-            obce_nazvy.append(nazev_bunka.text.strip())
+        if cell_number and cell_name and pointer:
+            pointers.append(pointer["href"])
+            loc_number.append(cell_number.text.strip())
+            loc_name.append(cell_name.text.strip())
    
 
-    return obce_cisla, obce_nazvy, odkazy
+    return loc_number, loc_name, pointers
 
 
 def table_work(soup: BeautifulSoup, tabulka: int, sloupec: int) -> list:
     '''Zpracuje tabulku na stance'''
 
-    vysledek = []
-    tabulky = soup.find_all("table", class_="table")
-    radky = tabulky[tabulka].find_all("tr")[2:]
+    result = []
+    tables = soup.find_all("table", class_="table")
+    lines = tables[tabulka].find_all("tr")[2:]
 
-    for radek in radky:
-        bunky = radek.find_all("td")
-        if len(bunky) >= 3:
-            vysledek.append(bunky[sloupec].text.strip())
+    for line in lines:
+        cells = line.find_all("td")
+        if len(cells) >= 3:
+            result.append(cells[sloupec].text.strip())
 
-    return vysledek
+    return result
 
-def web_scrape(soup: BeautifulSoup, code_obec: str, name_obec: str) -> dict:
+def web_scrape(soup: BeautifulSoup, location_code: str, location_name: str) -> dict:
     '''Vrátí slovník s daty z webové stránky'''
 
-    vysledek = dict()
+    result = dict()
 
-    tabulky = soup.find_all("table", class_="table") # najde v html všechny tabulky s třídou table
+    tables = soup.find_all("table", class_="table") # najde v html všechny tables s třídou table
 
-    tabulka_jedna = tabulky[0] # první tabulka na stránce
-    radky_tabulka_jedna = tabulka_jedna.find_all("tr")[2:] # řádky z 1. tabulky
+    table_one = tables[0] # první tabulka na stránce
+    lines_table_one = table_one.find_all("tr")[2:] # řádky z 1. tables
 
-    for radek in radky_tabulka_jedna:
-        bunky = radek.find_all("td")
-        pocet_volicu = bunky[3].text.strip() # vrátí počet voličů
-        vydane_obalky = bunky[4].text.strip() # vrátí počet vydaných obálek
-        platne_hlasy = bunky[7].text.strip() # vrátí počet platných hlasů
+    for line in lines_table_one:
+        cells = line.find_all("td")
+        voters_count = cells[3].text.strip() # vrátí počet voličů
+        issued_envelopes = cells[4].text.strip() # vrátí počet vydaných obálek
+        valid_votes = cells[7].text.strip() # vrátí počet platných hlasů
     
-    strany = table_work(soup, 1, 1) + (table_work(soup, 2, 1)) # vrátí seznam stran
-    hlasy = table_work(soup, 1, 2) + (table_work(soup, 2, 2)) # vrátí seznam hlasů
+    political_partys = table_work(soup, 1, 1) + (table_work(soup, 2, 1)) # vrátí seznam stran
+    votes = table_work(soup, 1, 2) + (table_work(soup, 2, 2)) # vrátí seznam hlasů
 
-    vysledek["Location_code"] = code_obec
-    vysledek["Location"] = name_obec
-    vysledek["Registered"] = pocet_volicu
-    vysledek["Envelopes"] = vydane_obalky
-    vysledek["Valid"] = platne_hlasy
-    vysledek["Partys"] = strany
-    vysledek["Voice_count"] = hlasy
+    result["Location_code"] = location_code
+    result["Location"] = location_name
+    result["Registered"] = voters_count
+    result["Envelopes"] = issued_envelopes
+    result["Valid"] = valid_votes
+    result["Political_partys"] = political_partys
+    result["Voice_count"] = votes
     
-    return vysledek
+    return result
 
-def save_to_csv(vysledek: dict, soubor: str, headless: bool) -> None:
+def save_to_csv(result: dict, soubor: str, headless: bool) -> None:
     '''Uloží všechna data do csv souboru'''
     
     write_mode = "w" if headless else "a"
     with open(soubor, mode=write_mode, encoding="utf-8", newline="") as file:
         zapisovac = csv.writer(file)
         if headless:
-            head = ["Code", "Location", "Registered", "Envelopes", "Valid"] + vysledek["Partys"]
+            head = ["Location_code", "Location", "Registered", "Envelopes", "Valid"] + result["Political_partys"]
             zapisovac.writerow(head)
 
-        content = [vysledek["Location_code"], vysledek["Location"], vysledek["Registered"], vysledek["Envelopes"], vysledek["Valid"]] + vysledek["Voice_count"]
+        content = [result["Location_code"], result["Location"], result["Registered"], result["Envelopes"], result["Valid"]] + result["Voice_count"]
         zapisovac.writerow(content)
 
 
@@ -107,20 +107,20 @@ if __name__ == "__main__":
     if len(sys.argv) != 3:
         print("Type: python projekt_3.py <url> <soubor.csv>")
         sys.exit(1)
-    url_obec = sys.argv[1]
+    url_loc = sys.argv[1]
     soubor = sys.argv[2]
-    obsah_obec = get_web_page(url_obec)
-    soup_obec = get_soup(obsah_obec)
-    obce_cislo, obce_nazvy, obce_odkaz = odkaz_na_obec(soup_obec)
+    content_loc = get_web_page(url_loc)
+    soup_obec = get_soup(content_loc)
+    loc_number, loc_name, loc_pointer = point_to_loc(soup_obec)
  
    
-    for index, odkaz in enumerate(obce_odkaz):
-        url = f"https://www.volby.cz/pls/ps2017nss/{odkaz}"
+    for index, pointer in enumerate(loc_pointer):
+        url = f"https://www.volby.cz/pls/ps2017nss/{pointer}"
     
-        obsah = get_web_page(url)
-        soup = get_soup(obsah)
-        vysledek = web_scrape(soup, obce_cislo[index], obce_nazvy[index])
-        save_to_csv(vysledek, soubor, headless=(index == 0))
+        content = get_web_page(url)
+        soup = get_soup(content)
+        result = web_scrape(soup, loc_number[index], loc_name[index])
+        save_to_csv(result, soubor, headless=(index == 0))
     print(f"Data byla uložena do souboru {soubor}")
 
 
