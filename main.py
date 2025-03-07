@@ -13,47 +13,53 @@ from bs4 import BeautifulSoup
 
 def get_web_page(web_url: str) -> str:
     '''Vratí obsah webové stránky jako string'''
-
-    return requests.get(web_url).text
+    try:
+        return requests.get(web_url).text
+    
+    except requests.exceptions.RequestException as error:
+        print(f"Chyba při stahování stránky: {error}")
+        sys.exit(1)
 
 def get_soup(web_page: str) -> BeautifulSoup:
     '''Vytvoří objekt BeautifulSoup a připraví k parsování html'''
 
     return BeautifulSoup(web_page, "html.parser")
 
-def point_to_loc(soup: BeautifulSoup) -> tuple:
-    '''Vrátí seznam pointerů na obce'''
+def get_loc_number(lines) -> list:
+    '''Vrátí seznam čísel obcí'''
+    
+    return [line.find("td", class_="cislo").text.strip() for line in lines if line.find("td", class_="cislo")]
 
-    loc_number = [] # seznam čísel obcí
-    loc_name = [] # seznam názvů obcí
-    pointers = [] # seznam pointerů na obce
+def get_loc_name(lines) -> list:
+    '''Vrátí seznam názvů obcí'''
+
+    return [line.find("td", class_="overflow_name").text.strip() for line in lines if line.find("td", class_="overflow_name")]
+
+def get_pointers(lines) -> list:
+    '''Vrátí seznam odkazů na obce'''
+
+    return [line.find("a")["href"] for line in lines if line.find("a")]
+
+def point_to_loc(soup: BeautifulSoup) -> tuple:
+    '''Vrátí seznam odkazů na obce'''
+
     lines = soup.find_all("tr") # najde všechny řádky
 
-    for line in lines:
-        cell_number = line.find("td", class_="cislo")
-        cell_name = line.find("td", class_="overflow_name")
-        pointer = line.find("a")
-
-        if cell_number and cell_name and pointer:
-            pointers.append(pointer["href"])
-            loc_number.append(cell_number.text.strip())
-            loc_name.append(cell_name.text.strip())
-   
-
-    return loc_number, loc_name, pointers
+    return get_loc_number(lines), get_loc_name(lines), get_pointers(lines)
 
 
-def table_work(soup: BeautifulSoup, tabulka: int, sloupec: int) -> list:
+def table_work(soup: BeautifulSoup, table: int, column: int) -> list:
     '''Zpracuje tabulku na stance'''
 
     result = []
     tables = soup.find_all("table", class_="table")
-    lines = tables[tabulka].find_all("tr")[2:]
 
-    for line in lines:
-        cells = line.find_all("td")
-        if len(cells) >= 3:
-            result.append(cells[sloupec].text.strip())
+    if len(tables) > table:
+        lines = tables[table].find_all("tr")[2:]
+        for line in lines:
+            cells = line.find_all("td")
+            if len(cells) >= column:
+                result.append(cells[column].text.strip())
 
     return result
 
@@ -62,27 +68,23 @@ def web_scrape(soup: BeautifulSoup, location_code: str, location_name: str) -> d
 
     result = dict()
 
-    tables = soup.find_all("table", class_="table") # najde v html všechny tables s třídou table
+    tables = soup.find_all("table", class_="table") # najde v html všechny tabulky s třídou table
 
-    table_one = tables[0] # první tabulka na stránce
-    lines_table_one = table_one.find_all("tr")[2:] # řádky z 1. tables
+    if tables: 
+        table_one = tables[0] # první tabulka na stránce
+        lines_table_one = table_one.find_all("tr")[2:] # řádky z 1. tables
 
-    for line in lines_table_one:
-        cells = line.find_all("td")
-        voters_count = cells[3].text.strip() # vrátí počet voličů
-        issued_envelopes = cells[4].text.strip() # vrátí počet vydaných obálek
-        valid_votes = cells[7].text.strip() # vrátí počet platných hlasů
-    
-    political_partys = table_work(soup, 1, 1) + (table_work(soup, 2, 1)) # vrátí seznam stran
-    votes = table_work(soup, 1, 2) + (table_work(soup, 2, 2)) # vrátí seznam hlasů
-
-    result["Location_code"] = location_code
+        for line in lines_table_one:
+            cells = line.find_all("td")
+            if len(cells) > 7:
+                result["Registered"] = cells[3].text.strip() # vrátí počet voličů
+                result["Envelopes"] = cells[4].text.strip() # vrátí počet vydaných obálek
+                result["Valid"] = cells[7].text.strip() # vrátí počet platných hlasů
+        
+    result["Political_partys"] = table_work(soup, 1, 1) + (table_work(soup, 2, 1)) # vrátí seznam stran
+    result["Voice_count"] = table_work(soup, 1, 2) + (table_work(soup, 2, 2)) # vrátí seznam hlasů
     result["Location"] = location_name
-    result["Registered"] = voters_count
-    result["Envelopes"] = issued_envelopes
-    result["Valid"] = valid_votes
-    result["Political_partys"] = political_partys
-    result["Voice_count"] = votes
+    result["Location_code"] = location_code
     
     return result
 
@@ -100,27 +102,61 @@ def save_to_csv(result: dict, soubor: str, headless: bool) -> None:
         zapisovac.writerow(content)
 
 
+def check_url_response(url: str) -> bool:
+    '''Ověří, zda je URL dostupná'''
+    
+    try:
+        response = requests.get(url)
+        return response.status_code == 200
+    except requests.exceptions.RequestException:
+        return False
+    
+def arguments_check(url: str, file: str) -> bool:
+    '''Kontroluje zda byly zadány správné argumenty'''
 
+    if not url.startswith("https://www.volby.cz/pls/ps2017nss/"):
+        print("Špatný formát url adresy")
+
+        return False
+    
+    if not check_url_response(url):
+        print("URL není dostupná")
+
+        return False
+    
+    if not file.endswith(".csv"):
+        print("Druhý argument musí být format souboru s příponou .csv")
+
+        return False
+    
+    return True
 
 if __name__ == "__main__":
 
     if len(sys.argv) != 3:
-        print("Type: python projekt_3.py <url> <soubor.csv>")
+        print("Použití: python3 main.py <url> <soubor.csv>")
         sys.exit(1)
     url_loc = sys.argv[1]
-    soubor = sys.argv[2]
-    content_loc = get_web_page(url_loc)
-    soup_obec = get_soup(content_loc)
-    loc_number, loc_name, loc_pointer = point_to_loc(soup_obec)
- 
-   
-    for index, pointer in enumerate(loc_pointer):
-        url = f"https://www.volby.cz/pls/ps2017nss/{pointer}"
-    
-        content = get_web_page(url)
-        soup = get_soup(content)
-        result = web_scrape(soup, loc_number[index], loc_name[index])
-        save_to_csv(result, soubor, headless=(index == 0))
-    print(f"Data byla uložena do souboru {soubor}")
+    file = sys.argv[2]
 
+    if not arguments_check(url_loc, file):
+        sys.exit(1)
+
+    try:
+        content_loc = get_web_page(url_loc) # stažení obsahu webové stránky
+        soup_location = get_soup(content_loc) # vytvoření objektu BeautifulSoup
+        loc_number, loc_name, loc_pointer = point_to_loc(soup_location) # získání seznamů čísel obcí, názvů obcí a odkazů na obce
+    
+        for index, pointer in enumerate(loc_pointer):
+            url = f"https://www.volby.cz/pls/ps2017nss/{pointer}"
+            content = get_web_page(url)
+            soup = get_soup(content)
+            result = web_scrape(soup, loc_number[index], loc_name[index])
+            save_to_csv(result, file, headless=(index == 0))
+
+        print(f"Data byla uložena do souboru {file}")
+
+    except Exception as error:
+        print(f"Chyba: {error}")
+        sys.exit(1)
 
