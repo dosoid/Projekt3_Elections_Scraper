@@ -66,13 +66,13 @@ def table_work(soup: BeautifulSoup, table: int, column: int) -> list:
 def web_scrape(soup: BeautifulSoup, location_code: str, location_name: str) -> dict:
     '''Vrátí slovník s daty z webové stránky'''
 
-    result = dict()
+    result = dict() # vytvoří slovník pro uložení dat
 
     tables = soup.find_all("table", class_="table") # najde v html všechny tabulky s třídou table
 
     if tables: 
         table_one = tables[0] # první tabulka na stránce
-        lines_table_one = table_one.find_all("tr")[2:] # řádky z 1. tables
+        lines_table_one = table_one.find_all("tr")[2:] # řádky z 1. tabulky
 
         for line in lines_table_one:
             cells = line.find_all("td")
@@ -83,15 +83,15 @@ def web_scrape(soup: BeautifulSoup, location_code: str, location_name: str) -> d
         
     result["Political_partys"] = table_work(soup, 1, 1) + (table_work(soup, 2, 1)) # vrátí seznam stran
     result["Voice_count"] = table_work(soup, 1, 2) + (table_work(soup, 2, 2)) # vrátí seznam hlasů
-    result["Location"] = location_name
-    result["Location_code"] = location_code
+    result["Location"] = location_name # vrátí název obce
+    result["Location_code"] = location_code # vrátí číslo obce
     
     return result
 
 def save_to_csv(result: dict, soubor: str, headless: bool) -> None:
     '''Uloží všechna data do csv souboru'''
     
-    write_mode = "w" if headless else "a"
+    write_mode = "w" if headless else "a" # v případě 1.zápisu vytvoří soubor, jinak přidává data
     with open(soubor, mode=write_mode, encoding="utf-8", newline="") as file:
         zapisovac = csv.writer(file)
         if headless:
@@ -101,6 +101,11 @@ def save_to_csv(result: dict, soubor: str, headless: bool) -> None:
         content = [result["Location_code"], result["Location"], result["Registered"], result["Envelopes"], result["Valid"]] + result["Voice_count"]
         zapisovac.writerow(content)
 
+def print_usage(): 
+    '''Vypíše to terminálu správné použití programu'''
+
+    print("\n Správné použití příklad:")
+    print("   python3 main.py \"https://www.volby.cz/pls/ps2017nss/ps32?xjazyk=CZ&xkraj=2&xnumnuts=2101\" vysledky.csv\n")
 
 def check_url_response(url: str) -> bool:
     '''Ověří, zda je URL dostupná'''
@@ -131,6 +136,8 @@ def arguments_check(url: str, file: str) -> bool:
     
     return True
 
+
+
 if __name__ == "__main__":
 
     if len(sys.argv) != 3:
@@ -140,11 +147,13 @@ if __name__ == "__main__":
     file = sys.argv[2]
 
     if not arguments_check(url_loc, file):
+        print_usage()
         sys.exit(1)
 
     try:
         content_loc = get_web_page(url_loc) # stažení obsahu webové stránky
         soup_location = get_soup(content_loc) # vytvoření objektu BeautifulSoup
+        print(f"Stahuji data z vybraného url: {url_loc}")
         loc_number, loc_name, loc_pointer = point_to_loc(soup_location) # získání seznamů čísel obcí, názvů obcí a odkazů na obce
     
         for index, pointer in enumerate(loc_pointer):
@@ -155,6 +164,8 @@ if __name__ == "__main__":
             save_to_csv(result, file, headless=(index == 0))
 
         print(f"Data byla uložena do souboru {file}")
+        print("Ukončuji program Election Scraper")
+        sys.exit(0)
 
     except Exception as error:
         print(f"Chyba: {error}")
